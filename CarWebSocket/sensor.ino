@@ -1,6 +1,8 @@
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <WebSocketsServer.h>
-#include <Wire.h>
+#include "Wire.h"
+#include <MPU6050_light.h>
 #include <Adafruit_AMG88xx.h>
 #include <PubSubClient.h>
 #include <ESP32Servo.h>
@@ -8,8 +10,8 @@
 #include <HardwareSerial.h>
 
 // Wi-Fi & MQTT Config
-const char* ssid = "ESP32-Thermal";
-const char* password = "12345678";
+const char* ssid = "HUNTRIX007 6995";
+const char* password = "9817t)X6";
 const char* temperature_topic = "car/temperature";
 
 // WebSockets Server
@@ -34,9 +36,12 @@ WebSocketsServer webSocket = WebSocketsServer(81);
 Servo h_servo;
 Servo v_servo;
 
+TwoWire WireMPU = TwoWire(1);  
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 Adafruit_AMG88xx amg;
+MPU6050 mpu(WireMPU);
 
 HardwareSerial gpsSerial(2); // Use UART2
 TinyGPSPlus gps;
@@ -44,9 +49,87 @@ TinyGPSPlus gps;
 unsigned long lastPingTime = 0;
 const unsigned long pingInterval = 30000; // 30 seconds
 unsigned long lastGpsCheckTime = 0;
-const unsigned long gpsCheckInterval = 200;
+const unsigned long gpsCheckInterval = 1000;
 int lastStationCount = 0; 
 String camIP = "";
+
+
+bool autonomousMode = false;
+double targetLat = 0.0;
+double targetLng = 0.0;
+const double GPS_PRECISION = 0.00001; // ~1 meter precision
+const double HEADING_TOLERANCE = 10.0; // degrees
+unsigned long lastNavigationUpdate = 0;
+const unsigned long navigationInterval = 500; // Update every 500ms
+
+
+double calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+  const double R = 6371000; // Earth radius in meters
+  double dLat = radians(lat2 - lat1);
+  double dLng = radians(lng2 - lng1);
+  double a = sin(dLat/2) * sin(dLat/2) + cos(radians(lat1)) * cos(radians(lat2)) * sin(dLng/2) * sin(dLng/2);
+  double c = 2 * atan2(sqrt(a), sqrt(1-a));
+  return R * c;
+}
+
+double calculateBearing(double lat1, double lng1, double lat2, double lng2) {
+  double dLng = radians(lng2 - lng1);
+  double y = sin(dLng) * cos(radians(lat2));
+  double x = cos(radians(lat1)) * sin(radians(lat2)) - sin(radians(lat1)) * cos(radians(lat2)) * cos(dLng);
+  double bearing = degrees(atan2(y, x));
+  return fmod((bearing + 360), 360); // Normalize to 0-360
+}
+
+void navigateToTarget() {
+  if (!autonomousMode || !gps.location.isValid()) return;
+  
+  double currentLat = gps.location.lat();
+  double currentLng = gps.location.lng();
+  double distance = calculateDistance(currentLat, currentLng, targetLat, targetLng);
+  
+  // Check if we've reached the target
+  if (distance < 2.0) { // Within 2 meters
+    stopCar();
+    autonomousMode = false;
+    webSocket.broadcastTXT("TARGET_REACHED");
+    Serial.println("Target reached!");
+    return;
+  }
+  
+  // Calculate required heading
+  double targetBearing = calculateBearing(currentLat, currentLng, targetLat, targetLng);
+  double currentHeading = mpu.getAngleZ() + 180; // Normalize to 0-360
+  if (currentHeading < 0) currentHeading += 360;
+  if (currentHeading >= 360) currentHeading -= 360;
+  
+  double headingError = targetBearing - currentHeading;
+  if (headingError > 180) headingError -= 360;
+  if (headingError < -180) headingError += 360;
+  
+  // Send navigation data
+  String navData = "NAV_DATA:{";
+  navData += "\"distance\":" + String(distance, 2) + ",";
+  navData += "\"targetBearing\":" + String(targetBearing, 2) + ",";
+  navData += "\"currentHeading\":" + String(currentHeading, 2) + ",";
+  navData += "\"headingError\":" + String(headingError, 2) + "}";
+  webSocket.broadcastTXT(navData);
+  
+  // Navigation logic
+  if (abs(headingError) > HEADING_TOLERANCE) {
+    // Need to turn
+    if (headingError > 0) {
+      turnRight();
+    } else {
+      turnLeft();
+    }
+  } else {
+    // Heading is good, move forward
+    moveForward();
+  }
+}
+
+
+
 
 void setup() {
   Serial.begin(115200);
@@ -70,17 +153,46 @@ void setup() {
   
   stopCar();
 
-  WiFi.softAP(ssid, password);
-  Serial.print("Creating Wi-Fi network");
-  while (WiFi.softAPgetStationNum() == 0) {
-    Serial.print(".");
+  // WiFi.softAP(ssid, password);
+  // Serial.print("Creating Wi-Fi network");
+  // while (WiFi.softAPgetStationNum() == 0) {
+  //   Serial.print(".");
+  //   delay(500);
+  // }
+
+  // Connect to Wi-Fi (STA mode)
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConnected to WiFi");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  // Start mDNS
+  if (!MDNS.begin("esp32")) {
+    Serial.println("Error starting mDNS");
+  } else {
+    Serial.println("mDNS responder started: http://esp32.local");
   }
   Serial.println("\nNetwork Created!");
 
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
   Serial.println("WebSocket server started on port 81");
+
+  Wire.begin(21, 22);     // AMG8833 on default I2C
+  WireMPU.begin(26, 27);
+  byte status = mpu.begin();
+
+  if (status!=0) {
+    Serial.println("❌ MPU6050 not found. Check connections.");
+  }
+  Serial.println(F("Calculating offsets, do not move MPU6050"));
+  mpu.calcOffsets(true,true); // gyro and accelero
+  Serial.println("✅ MPU6050 ready.");
 
   // Initialize AMG8831 sensor
   while (!amg.begin()) {
@@ -93,60 +205,70 @@ void setup() {
 }
 
 void loop() {
+  unsigned long currentTime = millis();
+
+  // Handle WebSocket (prioritized)
   webSocket.loop();
 
-  unsigned long currentTime = millis();
-  if (currentTime - lastPingTime > pingInterval) {
-    webSocket.broadcastTXT("ping");
-    lastPingTime = currentTime;
-  }
-
-  checkNewConnections();
-
-  // Read and print temperature data periodically
-  // static unsigned long lastTempReadTime = 0;
-  // const unsigned long tempReadInterval = 5000; // 5 seconds
-  // if (millis() - lastTempReadTime > tempReadInterval) {
-  //   readTemperatureData();
-  //   lastTempReadTime = millis();
-  // }
-
-   // GPS non-blocking handler
+  // GPS non-blocking handler
   while (gpsSerial.available()) {
     gps.encode(gpsSerial.read());
   }
 
-  if (currentTime - lastGpsCheckTime > gpsCheckInterval) {
-    if (gps.location.isUpdated()) {
-      Serial.print("LAT: ");
-      Serial.println(gps.location.lat(), 6);
-      Serial.print("LONG: "); 
-      Serial.println(gps.location.lng(), 6);
-      Serial.print("SPEED (km/h) = "); 
-      Serial.println(gps.speed.kmph()); 
-      Serial.print("ALT (min)= "); 
-      Serial.println(gps.altitude.meters());
-      Serial.print("HDOP = "); 
-      Serial.println(gps.hdop.value() / 100.0); 
-      Serial.print("Satellites = "); 
-      Serial.println(gps.satellites.value()); 
-      Serial.print("Time in UTC: ");
-      Serial.println(String(gps.date.year()) + "/" + String(gps.date.month()) + "/" + String(gps.date.day()) + "," + String(gps.time.hour()) + ":" + String(gps.time.minute()) + ":" + String(gps.time.second()));
-      Serial.println("");
-
-      String gpsData = "GPS_DATA:{";
-      gpsData += "\"lat\":" + String(gps.location.lat(), 6) + ",";
-      gpsData += "\"lng\":" + String(gps.location.lng(), 6) + ",";
-      gpsData += "\"speed\":" + String(gps.speed.kmph()) + ",";
-      gpsData += "\"alt\":" + String(gps.altitude.meters()) + ",";
-      gpsData += "\"hdop\":" + String(gps.hdop.value() / 100.0) + ",";
-      gpsData += "\"satellites\":" + String(gps.satellites.value()) + ",";
-      gpsData += "\"time\":\"" + String(gps.date.year()) + "/" + String(gps.date.month()) + "/" + String(gps.date.day()) + " " + String(gps.time.hour()) + ":" + String(gps.time.minute()) + ":" + String(gps.time.second()) + "\"}";
-      webSocket.broadcastTXT(gpsData);
-    }
-
+  // Send GPS updates periodically if location is updated
+  mpu.update();
+  if (currentTime - lastGpsCheckTime >= gpsCheckInterval) {
+    sendGPSData();
+    sendGyroData();
     lastGpsCheckTime = currentTime;
   }
+
+  // Ping clients every 30s
+  if (currentTime - lastPingTime >= pingInterval) {
+    webSocket.broadcastTXT("ping");
+    lastPingTime = currentTime;
+  }
+
+  if (autonomousMode && (currentTime - lastNavigationUpdate >= navigationInterval)) {
+    navigateToTarget();
+    lastNavigationUpdate = currentTime;
+  }
+
+  // Check client connection state
+  checkNewConnections();
+}
+
+void sendGPSData() {
+  String gpsData = "GPS_DATA:{";
+  gpsData += "\"lat\":" + String(gps.location.lat(), 6) + ",";
+  gpsData += "\"lng\":" + String(gps.location.lng(), 6) + ",";
+  gpsData += "\"speed\":" + String(gps.speed.kmph()) + ",";
+  gpsData += "\"alt\":" + String(gps.altitude.meters()) + ",";
+  gpsData += "\"hdop\":" + String(gps.hdop.value() / 100.0) + ",";
+  gpsData += "\"satellites\":" + String(gps.satellites.value()) + ",";
+  gpsData += "\"time\":\"" + String(gps.date.year()) + "/" + String(gps.date.month()) + "/" + String(gps.date.day()) +
+             " " + String(gps.time.hour()) + ":" + String(gps.time.minute()) + ":" + String(gps.time.second()) + "\"}";
+  
+  webSocket.broadcastTXT(gpsData);
+}
+
+void sendGyroData() {
+
+  String gyroData = "GYRO_DATA:{";
+  gyroData += "\"gyro_x\":" + String(mpu.getGyroX()) + ",";
+  gyroData += "\"gyro_y\":" + String(mpu.getGyroY()) + ",";
+  gyroData += "\"gyro_z\":" + String(mpu.getGyroZ()) + ",";
+  gyroData += "\"accel_x\":" + String(mpu.getAccX()) + ",";
+  gyroData += "\"accel_y\":" + String(mpu.getAccY()) + ",";
+  gyroData += "\"accel_z\":" + String(mpu.getAccZ()) + ",";
+  gyroData += "\"accel_angle_x\":" + String(mpu.getAccAngleX()) + ",";
+  gyroData += "\"accel_angle_y\":" + String(mpu.getAccAngleY()) + ",";
+  gyroData += "\"angle_x\":" + String(mpu.getAngleX()) + ",";
+  gyroData += "\"angle_y\":" + String(mpu.getAngleY()) + ",";
+  gyroData += "\"angle_z\":" + String(mpu.getAngleZ()) + ",";
+  gyroData += "\"temp\":" + String(mpu.getTemp(), 2) + "}";
+
+  webSocket.broadcastTXT(gyroData);
 }
 
 void checkNewConnections() {
@@ -186,6 +308,8 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length)
     else if (command.startsWith("H_TURN_CAM:")) {
       String pos = command.substring(11);
       int position = pos.toInt();
+      Serial.println(pos); 
+      Serial.println(position); 
       if (position >= 0 && position <= 180) {
         h_servo.write(position);
       } else {
@@ -195,6 +319,8 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length)
     else if (command.startsWith("V_TURN_CAM:")) {
       String pos = command.substring(11);
       int position = pos.toInt();
+      Serial.println(pos); 
+      Serial.println(position); 
       if (position >= 0 && position <= 180) {
         v_servo.write(position);
       } else {
@@ -207,6 +333,25 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length)
       Serial.println("ESP32-CAM IP stored: " + camIP);
     } else if (command == "GET_CAM_IP") {
       webSocket.sendTXT(num, "CAM_IP:" + camIP);
+    } else if (command.startsWith("SET_TARGET:")) {
+      String coords = command.substring(11);
+      int commaIndex = coords.indexOf(',');
+      if (commaIndex > 0) {
+        targetLat = coords.substring(0, commaIndex).toDouble();
+        targetLng = coords.substring(commaIndex + 1).toDouble();
+        autonomousMode = true;
+        Serial.println("Target set: " + String(targetLat, 6) + ", " + String(targetLng, 6));
+        webSocket.broadcastTXT("TARGET_SET:" + String(targetLat, 6) + "," + String(targetLng, 6));
+      }
+    }
+    else if (command == "STOP_AUTO") {
+      autonomousMode = false;
+      stopCar();
+      webSocket.broadcastTXT("AUTO_STOPPED");
+      Serial.println("Autonomous mode stopped");
+    }
+    else if (command == "GET_TARGET") {
+      webSocket.sendTXT(num, "CURRENT_TARGET:" + String(targetLat, 6) + "," + String(targetLng, 6));
     }
   }
 }

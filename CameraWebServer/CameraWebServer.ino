@@ -37,9 +37,9 @@
 // ===========================
 // Enter your WiFi credentials
 // ===========================
-const char* ssid = "ESP32-Thermal";
-const char* password = "12345678";
-const char* serverIP = "192.168.4.1";
+const char* ssid = "HUNTRIX007 6995";
+const char* password = "9817t)X6";
+const char* serverIP = "esp32.local";
 const int serverPort = 81;
 
 WebSocketsClient webSocket;
