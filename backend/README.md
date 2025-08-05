@@ -49,6 +49,7 @@ results = sg.process_video_batch(
 
 ```bash
 # Start the server
+# & "D:\HunTrix007\SLIIT\Year 4\Research Project\HeatScape\.venv\Scripts\python.exe" superglue_backend.py
 python superglue_backend.py --host localhost --port 5000
 
 # Use the API
