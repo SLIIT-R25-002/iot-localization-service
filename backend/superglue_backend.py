@@ -442,6 +442,29 @@ def stop_stream():
     return jsonify(result)
 
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for container orchestration"""
+    try:
+        # Basic health checks
+        health_status = {
+            "status": "healthy",
+            "service": "iot-localization-service",
+            "backend_initialized": backend is not None,
+            "device": backend.device if backend else "unknown",
+            "reference_image_set": backend.reference_data is not None if backend else False,
+            "streaming_active": backend.streaming_active if backend else False,
+            "model_config": backend.config if backend else None
+        }
+        return jsonify(health_status), 200
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "service": "iot-localization-service",
+            "error": str(e)
+        }), 500
+
+
 def main():
     """Main function to run the backend"""
     parser = argparse.ArgumentParser(
