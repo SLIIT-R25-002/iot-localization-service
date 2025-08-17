@@ -103,8 +103,28 @@ All components have been tested and are working correctly:
 
 ### 📋 Next Steps
 
-1. **Install Dependencies** (if not already done):
+1. **Install Dependencies**:
+   
+   **Option A: CPU-only (Default)**
    ```bash
+   pip install -r requirements_backend.txt
+   ```
+   
+   **Option B: GPU/CUDA Support (Recommended for RTX/GTX GPUs)**
+   ```bash
+   # Install CUDA-enabled PyTorch first
+   pip install -r requirements_cuda.txt
+   ```
+   
+   **Option C: Manual CUDA Installation**
+   ```bash
+   # Uninstall CPU version if already installed
+   pip uninstall torch torchvision torchaudio -y
+   
+   # Install CUDA version (adjust cu124 for your CUDA version)
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+   
+   # Then install other requirements
    pip install -r requirements_backend.txt
    ```
 

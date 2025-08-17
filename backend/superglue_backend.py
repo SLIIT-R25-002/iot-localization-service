@@ -54,6 +54,14 @@ class SuperGlueBackend:
         self.device = 'cuda' if torch.cuda.is_available() and not config.get('force_cpu', False) else 'cpu'
         logger.info(f'Running inference on device: {self.device}')
         
+        logger.info(f'CUDA version: {torch.version.cuda}')      # should match your CUDA toolkit (e.g. 12.1)
+        logger.info(f'CUDA available: {torch.cuda.is_available()}')
+        
+        if torch.cuda.is_available():
+            logger.info(f'GPU device name: {torch.cuda.get_device_name(0)}')
+        else:
+            logger.info('No CUDA GPU available, running on CPU') 
+        
         # Initialize the matching network
         self.matching = Matching(config).eval().to(self.device)
         self.keys = ['keypoints', 'scores', 'descriptors']
