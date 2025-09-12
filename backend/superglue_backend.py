@@ -1380,7 +1380,7 @@ def main():
         '--port', type=int, default=5000,
         help='Port to run the API server on')
     parser.add_argument(
-        '--superglue', choices={'indoor', 'outdoor'}, default='indoor',
+        '--superglue', choices={'indoor', 'outdoor'}, default='outdoor',
         help='SuperGlue weights')
     parser.add_argument(
         '--max_keypoints', type=int, default=1024,

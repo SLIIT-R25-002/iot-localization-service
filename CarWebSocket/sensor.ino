@@ -57,10 +57,20 @@ String camIP = "";
 bool autonomousMode = false;
 double targetLat = 0.0;
 double targetLng = 0.0;
+// Target gyro orientation for alignment
+double targetPitch = 0.0;
+double targetRoll = 0.0;
+double targetYaw = 0.0;
+bool alignmentMode = false;
 const double GPS_PRECISION = 0.00001; // ~1 meter precision
 const double HEADING_TOLERANCE = 10.0; // degrees
+const double GYRO_TOLERANCE = 3.0; // degrees tolerance for alignment (more precise)
 unsigned long lastNavigationUpdate = 0;
 const unsigned long navigationInterval = 500; // Update every 500ms
+unsigned long lastAlignmentUpdate = 0;
+const unsigned long alignmentInterval = 800; // Alignment update every 800ms (slower for stability)
+int alignmentAttempts = 0;
+const int maxAlignmentAttempts = 20; // Prevent infinite alignment loops
 
 
 double calculateDistance(double lat1, double lng1, double lat2, double lng2) {
@@ -80,6 +90,114 @@ double calculateBearing(double lat1, double lng1, double lat2, double lng2) {
   return fmod((bearing + 360), 360); // Normalize to 0-360
 }
 
+bool performDeviceAlignment() {
+  if (!alignmentMode) return true; // Skip alignment if not in alignment mode
+  
+  // Safety check: prevent infinite alignment loops
+  if (alignmentAttempts >= maxAlignmentAttempts) {
+    stopCar();
+    alignmentMode = false;
+    webSocket.broadcastTXT("ALIGNMENT_TIMEOUT");
+    Serial.println("Alignment timeout - maximum attempts reached");
+    alignmentAttempts = 0;
+    return true;
+  }
+  
+  // Get current gyro readings
+  double currentPitch = mpu.getAngleX();
+  double currentRoll = mpu.getAngleY();
+  double currentYaw = mpu.getAngleZ();
+  
+  // Calculate alignment errors
+  double pitchError = targetPitch - currentPitch;
+  double rollError = targetRoll - currentRoll;
+  double yawError = targetYaw - currentYaw;
+  
+  // Normalize yaw error to [-180, 180]
+  if (yawError > 180) yawError -= 360;
+  if (yawError < -180) yawError += 360;
+  
+  // Send alignment data for monitoring
+  String alignData = "ALIGN_DATA:{";
+  alignData += "\"pitchError\":" + String(pitchError, 2) + ",";
+  alignData += "\"rollError\":" + String(rollError, 2) + ",";
+  alignData += "\"yawError\":" + String(yawError, 2) + ",";
+  alignData += "\"currentPitch\":" + String(currentPitch, 2) + ",";
+  alignData += "\"currentRoll\":" + String(currentRoll, 2) + ",";
+  alignData += "\"currentYaw\":" + String(currentYaw, 2) + ",";
+  alignData += "\"attempts\":" + String(alignmentAttempts) + ",";
+  alignData += "\"navigationPhase\":\"GYRO_ALIGNMENT\"}";
+  webSocket.broadcastTXT(alignData);
+  
+  // Check if alignment is achieved
+  if (abs(pitchError) <= GYRO_TOLERANCE && 
+      abs(rollError) <= GYRO_TOLERANCE && 
+      abs(yawError) <= GYRO_TOLERANCE) {
+    stopCar(); // Ensure car is stopped when aligned
+    alignmentMode = false;
+    alignmentAttempts = 0;
+    webSocket.broadcastTXT("ALIGNMENT_COMPLETE");
+    Serial.println("Device alignment complete!");
+    return true;
+  }
+  
+  // Perform physical alignment corrections using car movements
+  // Priority: Yaw (most critical) > Roll > Pitch
+  
+  if (abs(yawError) > GYRO_TOLERANCE) {
+    // Yaw correction using turning movements
+    int turnDuration = map(abs(yawError), GYRO_TOLERANCE, 45, 80, 300); // Scale duration based on error
+    turnDuration = constrain(turnDuration, 80, 300); // Limit duration
+    
+    if (yawError > 0) {
+      turnRight();
+      Serial.println("Aligning: Turning right for yaw correction (" + String(yawError, 2) + "°) for " + String(turnDuration) + "ms");
+    } else {
+      turnLeft();
+      Serial.println("Aligning: Turning left for yaw correction (" + String(yawError, 2) + "°) for " + String(turnDuration) + "ms");
+    }
+    delay(turnDuration);
+    stopCar();
+    
+  } else if (abs(rollError) > GYRO_TOLERANCE) {
+    // Roll correction using differential movement
+    int rollDuration = map(abs(rollError), GYRO_TOLERANCE, 30, 100, 250); // Scale duration
+    rollDuration = constrain(rollDuration, 100, 250);
+    
+    if (rollError > 0) {
+      // Need to tilt left - move right side forward, left side backward
+      moveForwardRight();
+      Serial.println("Aligning: Correcting roll tilt right (" + String(rollError, 2) + "°) for " + String(rollDuration) + "ms");
+    } else {
+      // Need to tilt right - move left side forward, right side backward  
+      moveForwardLeft();
+      Serial.println("Aligning: Correcting roll tilt left (" + String(rollError, 2) + "°) for " + String(rollDuration) + "ms");
+    }
+    delay(rollDuration);
+    stopCar();
+    
+  } else if (abs(pitchError) > GYRO_TOLERANCE) {
+    // Pitch correction using forward/backward movement
+    int pitchDuration = map(abs(pitchError), GYRO_TOLERANCE, 20, 80, 200); // Scale duration
+    pitchDuration = constrain(pitchDuration, 80, 200);
+    
+    if (pitchError > 0) {
+      // Need to pitch up - move backward briefly
+      moveBackward();
+      Serial.println("Aligning: Correcting pitch down (" + String(pitchError, 2) + "°) for " + String(pitchDuration) + "ms");
+    } else {
+      // Need to pitch down - move forward briefly
+      moveForward();
+      Serial.println("Aligning: Correcting pitch up (" + String(pitchError, 2) + "°) for " + String(pitchDuration) + "ms");
+    }
+    delay(pitchDuration);
+    stopCar();
+  }
+  
+  alignmentAttempts++;
+  return false; // Alignment not complete, continue adjusting
+}
+
 void navigateToTarget() {
   if (!autonomousMode || !gps.location.isValid()) return;
   
@@ -87,16 +205,31 @@ void navigateToTarget() {
   double currentLng = gps.location.lng();
   double distance = calculateDistance(currentLat, currentLng, targetLat, targetLng);
   
-  // Check if we've reached the target
+  // Check if we've reached the target location
   if (distance < 2.0) { // Within 2 meters
     stopCar();
-    autonomousMode = false;
-    webSocket.broadcastTXT("TARGET_REACHED");
-    Serial.println("Target reached!");
+    
+    // Now perform device alignment if needed (after reaching target)
+    if (alignmentMode) {
+      bool alignmentComplete = performDeviceAlignment();
+      if (!alignmentComplete) {
+        return; // Continue alignment at target location
+      }
+      // Alignment complete, finish autonomous mode
+      autonomousMode = false;
+      alignmentMode = false;
+      webSocket.broadcastTXT("TARGET_REACHED_AND_ALIGNED");
+      Serial.println("Target reached and device aligned!");
+    } else {
+      // No alignment needed, just finish
+      autonomousMode = false;
+      webSocket.broadcastTXT("TARGET_REACHED");
+      Serial.println("Target reached!");
+    }
     return;
   }
   
-  // Calculate required heading
+  // Calculate required heading for GPS navigation
   double targetBearing = calculateBearing(currentLat, currentLng, targetLat, targetLng);
   double currentHeading = mpu.getAngleZ() + 180; // Normalize to 0-360
   if (currentHeading < 0) currentHeading += 360;
@@ -111,28 +244,42 @@ void navigateToTarget() {
   navData += "\"distance\":" + String(distance, 2) + ",";
   navData += "\"targetBearing\":" + String(targetBearing, 2) + ",";
   navData += "\"currentHeading\":" + String(currentHeading, 2) + ",";
-  navData += "\"headingError\":" + String(headingError, 2) + "}";
+  navData += "\"headingError\":" + String(headingError, 2) + ",";
+  navData += "\"alignmentMode\":" + String(alignmentMode ? "true" : "false") + ",";
+  navData += "\"navigationPhase\":\"GPS_NAVIGATION\"}";
   webSocket.broadcastTXT(navData);
   
-  // Navigation logic
+  // GPS Navigation logic - move towards target coordinates
   if (abs(headingError) > HEADING_TOLERANCE) {
-    // Need to turn
+    // Need to turn towards target
     if (headingError > 0) {
       turnRight();
     } else {
       turnLeft();
     }
   } else {
-    // Heading is good, move forward
+    // Heading is good, move forward towards target
     moveForward();
   }
 }
 
+void setGPS9600() {
+  byte setBaud9600[] = {
+    0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0xD0, 0x08, 0x00, 0x00, 0x00, 0x96,
+    0x00, 0x00, 0x23, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0xA2, 0xB5
+  };
 
-
+  for (int i = 0; i < sizeof(setBaud9600); i++) {
+    gpsSerial.write(setBaud9600[i]);
+  }
+}
 
 void setup() {
   Serial.begin(115200);
+  gpsSerial.begin(9600);
+  setGPS9600();   // force GPS to use 9600
   
   pinMode(MOTOR1_IN1, OUTPUT);
   pinMode(MOTOR1_IN2, OUTPUT);
@@ -212,7 +359,26 @@ void loop() {
 
   // GPS non-blocking handler
   while (gpsSerial.available()) {
-    gps.encode(gpsSerial.read());
+    char c = gpsSerial.read();
+    Serial.write(c);  // Print raw NMEA sentence
+    gps.encode(c);
+  }
+  if (gps.location.isUpdated()) {
+    Serial.print("Latitude: "); 
+    Serial.println(gps.location.lat(), 6);
+
+    Serial.print("Longitude: "); 
+    Serial.println(gps.location.lng(), 6);
+
+    Serial.print("Satellites: "); 
+    Serial.println(gps.satellites.value());
+
+    Serial.print("HDOP: "); 
+    Serial.println(gps.hdop.hdop());
+
+    Serial.println("-------------------");
+  } else {
+    Serial.println("No GPS fix yet...");
   }
 
   // Send GPS updates periodically if location is updated
@@ -232,6 +398,10 @@ void loop() {
   if (autonomousMode && (currentTime - lastNavigationUpdate >= navigationInterval)) {
     navigateToTarget();
     lastNavigationUpdate = currentTime;
+  } else if (alignmentMode && !autonomousMode && (currentTime - lastAlignmentUpdate >= alignmentInterval)) {
+    // Perform standalone alignment when not in autonomous mode (for manual testing)
+    performDeviceAlignment();
+    lastAlignmentUpdate = currentTime;
   }
 
   // Check client connection state
@@ -335,23 +505,80 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length)
       webSocket.sendTXT(num, "CAM_IP:" + camIP);
     } else if (command.startsWith("SET_TARGET:")) {
       String coords = command.substring(11);
-      int commaIndex = coords.indexOf(',');
-      if (commaIndex > 0) {
-        targetLat = coords.substring(0, commaIndex).toDouble();
-        targetLng = coords.substring(commaIndex + 1).toDouble();
+      
+      // Parse coordinates and gyro data: lat,lng,pitch,roll,yaw
+      int firstComma = coords.indexOf(',');
+      int secondComma = coords.indexOf(',', firstComma + 1);
+      int thirdComma = coords.indexOf(',', secondComma + 1);
+      int fourthComma = coords.indexOf(',', thirdComma + 1);
+      
+      if (firstComma > 0 && secondComma > 0) {
+        targetLat = coords.substring(0, firstComma).toDouble();
+        targetLng = coords.substring(firstComma + 1, secondComma).toDouble();
+        
+        // Parse gyro data if present
+        if (thirdComma > 0 && fourthComma > 0) {
+          targetPitch = coords.substring(secondComma + 1, thirdComma).toDouble();
+          targetRoll = coords.substring(thirdComma + 1, fourthComma).toDouble();
+          targetYaw = coords.substring(fourthComma + 1).toDouble();
+          alignmentMode = true; // Enable alignment mode when gyro data is provided
+          alignmentAttempts = 0; // Reset alignment attempts
+          
+          Serial.println("Target set with alignment: " + String(targetLat, 6) + ", " + String(targetLng, 6));
+          Serial.println("Target orientation - Pitch: " + String(targetPitch, 3) + ", Roll: " + String(targetRoll, 3) + ", Yaw: " + String(targetYaw, 3));
+          
+          webSocket.broadcastTXT("TARGET_SET_WITH_ALIGNMENT:" + String(targetLat, 6) + "," + String(targetLng, 6) + 
+                                "," + String(targetPitch, 3) + "," + String(targetRoll, 3) + "," + String(targetYaw, 3));
+        } else {
+          alignmentMode = false; // No alignment if gyro data not provided
+          alignmentAttempts = 0; // Reset counter
+          Serial.println("Target set: " + String(targetLat, 6) + ", " + String(targetLng, 6));
+          webSocket.broadcastTXT("TARGET_SET:" + String(targetLat, 6) + "," + String(targetLng, 6));
+        }
+        
         autonomousMode = true;
-        Serial.println("Target set: " + String(targetLat, 6) + ", " + String(targetLng, 6));
-        webSocket.broadcastTXT("TARGET_SET:" + String(targetLat, 6) + "," + String(targetLng, 6));
       }
     }
     else if (command == "STOP_AUTO") {
       autonomousMode = false;
+      alignmentMode = false;
+      alignmentAttempts = 0; // Reset counter
       stopCar();
       webSocket.broadcastTXT("AUTO_STOPPED");
-      Serial.println("Autonomous mode stopped");
+      Serial.println("Autonomous mode and alignment stopped");
     }
     else if (command == "GET_TARGET") {
-      webSocket.sendTXT(num, "CURRENT_TARGET:" + String(targetLat, 6) + "," + String(targetLng, 6));
+      if (alignmentMode) {
+        webSocket.sendTXT(num, "CURRENT_TARGET_WITH_ALIGNMENT:" + String(targetLat, 6) + "," + String(targetLng, 6) + 
+                          "," + String(targetPitch, 3) + "," + String(targetRoll, 3) + "," + String(targetYaw, 3));
+      } else {
+        webSocket.sendTXT(num, "CURRENT_TARGET:" + String(targetLat, 6) + "," + String(targetLng, 6));
+      }
+    }
+    else if (command.startsWith("SET_ALIGNMENT:")) {
+      String gyroValues = command.substring(14);
+      int firstComma = gyroValues.indexOf(',');
+      int secondComma = gyroValues.indexOf(',', firstComma + 1);
+      
+      if (firstComma > 0 && secondComma > 0) {
+        targetPitch = gyroValues.substring(0, firstComma).toDouble();
+        targetRoll = gyroValues.substring(firstComma + 1, secondComma).toDouble();
+        targetYaw = gyroValues.substring(secondComma + 1).toDouble();
+        alignmentMode = true;
+        alignmentAttempts = 0; // Reset alignment attempts
+        
+        Serial.println("Alignment mode activated - Target orientation: Pitch: " + String(targetPitch, 3) + 
+                      ", Roll: " + String(targetRoll, 3) + ", Yaw: " + String(targetYaw, 3));
+        webSocket.broadcastTXT("ALIGNMENT_MODE_ACTIVATED:" + String(targetPitch, 3) + "," + 
+                              String(targetRoll, 3) + "," + String(targetYaw, 3));
+      }
+    }
+    else if (command == "STOP_ALIGNMENT") {
+      alignmentMode = false;
+      alignmentAttempts = 0; // Reset counter
+      stopCar();
+      webSocket.broadcastTXT("ALIGNMENT_STOPPED");
+      Serial.println("Alignment mode stopped");
     }
   }
 }
