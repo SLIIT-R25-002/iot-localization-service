@@ -1,5 +1,5 @@
-# Multi-stage build for IoT Localization Service
-FROM python:3.9-slim as base
+# Multi-stage build for IoT Localization Service with CUDA support
+FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime AS base
 
 # Set working directory
 WORKDIR /app
