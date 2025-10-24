@@ -1,0 +1,101 @@
+{
+    "compatibilities": [
+        "EC2",
+        "MANAGED_INSTANCES"
+    ],
+    "containerDefinitions": [
+        {
+            "cpu": 1024,
+            "environment": [],
+            "environmentFiles": [],
+            "essential": true,
+            "image": "438152405740.dkr.ecr.us-east-1.amazonaws.com/iot-localization-service:latest",
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/HeatScapeTask-IoT",
+                    "awslogs-create-group": "true",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "ecs"
+                },
+                "secretOptions": []
+            },
+            "memory": 3072,
+            "memoryReservation": 1024,
+            "mountPoints": [],
+            "name": "iot-localization-service",
+            "portMappings": [
+                {
+                    "appProtocol": "http",
+                    "containerPort": 5004,
+                    "hostPort": 5004,
+                    "name": "5004-tcp",
+                    "protocol": "tcp"
+                }
+            ],
+            "resourceRequirements": [
+                {
+                    "type": "GPU",
+                    "value": "1"
+                }
+            ],
+            "systemControls": [],
+            "ulimits": [],
+            "volumesFrom": []
+        }
+    ],
+    "cpu": "1024",
+    "enableFaultInjection": false,
+    "executionRoleArn": "arn:aws:iam::438152405740:role/ecsTaskExecutionRole",
+    "family": "HeatScapeTask-IoT",
+    "memory": "3072",
+    "networkMode": "awsvpc",
+    "placementConstraints": [],
+    "registeredAt": "2025-10-24T20:12:12.019Z",
+    "registeredBy": "arn:aws:iam::438152405740:root",
+    "requiresAttributes": [
+        {
+            "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
+        },
+        {
+            "name": "ecs.capability.execution-role-awslogs"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.ecr-auth"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.21"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.task-iam-role"
+        },
+        {
+            "name": "ecs.capability.execution-role-ecr-pull"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+        },
+        {
+            "name": "ecs.capability.task-eni"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.29"
+        }
+    ],
+    "requiresCompatibilities": [
+        "MANAGED_INSTANCES"
+    ],
+    "revision": 1,
+    "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+    },
+    "status": "ACTIVE",
+    "taskDefinitionArn": "arn:aws:ecs:us-east-1:438152405740:task-definition/HeatScapeTask-IoT:1",
+    "taskRoleArn": "arn:aws:iam::438152405740:role/ecsTaskExecutionRole",
+    "volumes": [],
+    "tags": []
+}
