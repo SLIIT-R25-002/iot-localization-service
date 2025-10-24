@@ -23,17 +23,14 @@ jobs:
       id: ecr-login
       uses: aws-actions/amazon-ecr-login@v2
       
-      # - name: Log in to Docker Hub
-      #   if: github.ref == 'refs/heads/main'
-      #   run: echo "${{ secrets.ECR_TOKEN }}" | docker login --username AWS --password-stdin 438152405740.dkr.ecr.us-east-1.amazonaws.com
-      
     - name: Build, tag, and push image
       env:
         ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
         ECR_REPOSITORY: iot-localization-service
         IMAGE_TAG: latest
       run: |
-        docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+        # Build from the backend folder where the Dockerfile actually lives
+        docker build -t $ECR_REPOSITORY:$IMAGE_TAG ./backend
         docker tag $ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         echo "IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
