@@ -45,7 +45,6 @@
         }
     ],
     "cpu": "1024",
-    "enableFaultInjection": false,
     "executionRoleArn": "arn:aws:iam::438152405740:role/ecsTaskExecutionRole",
     "family": "HeatScapeTask-IoT",
     "memory": "3072",
