@@ -27,7 +27,7 @@
             "portMappings": [
                 {
                     "appProtocol": "http",
-                    "containerPort": 5004,
+                    "containerPort": 5000,
                     "hostPort": 5004,
                     "name": "5004-tcp",
                     "protocol": "tcp"
