@@ -9,13 +9,13 @@
             "environment": [],
             "environmentFiles": [],
             "essential": true,
-            "image": "438152405740.dkr.ecr.us-east-1.amazonaws.com/iot-localization-service:latest",
+            "image": "597088026916.dkr.ecr.eu-north-1.amazonaws.com/iot-localization-service:latest",
             "logConfiguration": {
                 "logDriver": "awslogs",
                 "options": {
                     "awslogs-group": "/ecs/HeatScapeTask-IoT",
                     "awslogs-create-group": "true",
-                    "awslogs-region": "us-east-1",
+                    "awslogs-region": "eu-north-1",
                     "awslogs-stream-prefix": "ecs"
                 },
                 "secretOptions": []
@@ -45,13 +45,13 @@
         }
     ],
     "cpu": "1024",
-    "executionRoleArn": "arn:aws:iam::438152405740:role/ecsTaskExecutionRole",
+    "executionRoleArn": "arn:aws:iam::597088026916:role/ecsTaskExecutionRole",
     "family": "HeatScapeTask-IoT",
     "memory": "3072",
     "networkMode": "awsvpc",
     "placementConstraints": [],
     "registeredAt": "2025-10-24T20:12:12.019Z",
-    "registeredBy": "arn:aws:iam::438152405740:root",
+    "registeredBy": "arn:aws:iam::597088026916:root",
     "requiresAttributes": [
         {
             "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
@@ -93,8 +93,8 @@
         "operatingSystemFamily": "LINUX"
     },
     "status": "ACTIVE",
-    "taskDefinitionArn": "arn:aws:ecs:us-east-1:438152405740:task-definition/HeatScapeTask-IoT:1",
-    "taskRoleArn": "arn:aws:iam::438152405740:role/ecsTaskExecutionRole",
+    "taskDefinitionArn": "arn:aws:ecs:eu-north-1:597088026916:task-definition/HeatScapeTask-IoT:1",
+    "taskRoleArn": "arn:aws:iam::597088026916:role/ecsTaskExecutionRole",
     "volumes": [],
     "tags": []
 }
