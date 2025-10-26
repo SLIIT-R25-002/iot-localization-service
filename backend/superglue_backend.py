@@ -980,7 +980,7 @@ def video_stream():
     )
 
 
-@app.route('/api/iot/health', methods=['GET'])
+@app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint for container orchestration"""
     try:
