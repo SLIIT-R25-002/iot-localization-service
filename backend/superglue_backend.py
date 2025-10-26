@@ -748,7 +748,7 @@ CORS(app)
 backend = None
 
 
-@app.route('/api/info', methods=['GET'])
+@app.route('/api/iot/info', methods=['GET'])
 def get_info():
     """Get backend information"""
     if backend is None:
@@ -756,7 +756,7 @@ def get_info():
     return jsonify(backend.get_model_info())
 
 
-@app.route('/api/set_reference', methods=['POST'])
+@app.route('/api/iot/set_reference', methods=['POST'])
 def set_reference():
     """Set reference image from file upload or image path"""
     if backend is None:
@@ -819,7 +819,7 @@ def set_reference():
         return jsonify({"status": "error", "message": str(e)})
 
 
-@app.route('/api/match_image', methods=['POST'])
+@app.route('/api/iot/match_image', methods=['POST'])
 def match_image():
     """Match with another image from file upload or image path"""
     if backend is None:
@@ -882,7 +882,7 @@ def match_image():
         return jsonify({"status": "error", "message": str(e)})
 
 
-@app.route('/api/start_stream', methods=['POST'])
+@app.route('/api/iot/start_stream', methods=['POST'])
 def start_stream():
     """Start video stream matching"""
     if backend is None:
@@ -899,7 +899,7 @@ def start_stream():
     return jsonify(result)
 
 
-@app.route('/api/next_frame', methods=['GET'])
+@app.route('/api/iot/next_frame', methods=['GET'])
 def next_frame():
     """Get next frame matching results"""
     if backend is None:
@@ -910,7 +910,7 @@ def next_frame():
     return jsonify(result)
 
 
-@app.route('/api/stop_stream', methods=['POST'])
+@app.route('/api/iot/stop_stream', methods=['POST'])
 def stop_stream():
     """Stop video stream"""
     if backend is None:
@@ -920,7 +920,7 @@ def stop_stream():
     return jsonify(result)
 
 
-@app.route('/api/start_recording', methods=['POST'])
+@app.route('/api/iot/start_recording', methods=['POST'])
 def start_recording():
     """Start video recording with SuperGlue matches"""
     if backend is None:
@@ -943,7 +943,7 @@ def start_recording():
     return jsonify(result)
 
 
-@app.route('/api/stop_recording', methods=['POST'])
+@app.route('/api/iot/stop_recording', methods=['POST'])
 def stop_recording():
     """Stop video recording"""
     if backend is None:
@@ -953,7 +953,7 @@ def stop_recording():
     return jsonify(result)
 
 
-@app.route('/api/recording_status', methods=['GET'])
+@app.route('/api/iot/recording_status', methods=['GET'])
 def recording_status():
     """Get recording status"""
     if backend is None:
@@ -963,7 +963,7 @@ def recording_status():
     return jsonify(result)
 
 
-@app.route('/api/video_stream')
+@app.route('/api/iot/video_stream')
 def video_stream():
     """Stream processed video with SuperGlue matches"""
     if backend is None:
@@ -980,7 +980,7 @@ def video_stream():
     )
 
 
-@app.route('/health', methods=['GET'])
+@app.route('/api/iot/health', methods=['GET'])
 def health_check():
     """Health check endpoint for container orchestration"""
     try:
@@ -1003,7 +1003,7 @@ def health_check():
         }), 500
 
 
-@app.route('/', methods=['GET'])
+@app.route('/api/iot', methods=['GET'])
 def index():
     """Simple test page for file uploads"""
     return '''
