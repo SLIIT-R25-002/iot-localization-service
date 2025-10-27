@@ -36,7 +36,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Add health check endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:5000/health || exit 1
+    CMD curl -f http://localhost:5000/api/health || exit 1
 
 # Run the application
 CMD ["python", "superglue_backend.py", "--host", "0.0.0.0", "--port", "5000", "--superglue", "outdoor", "--max_keypoints", "1024"]
